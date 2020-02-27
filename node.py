@@ -12,6 +12,19 @@ class Node:
         self.port = conf['port']
 
         self.bufferSize = 10240
+        self.role = 'follower'
+
+        #Persistent state on all servers:
+        self.currentTerm = 0
+        self.votedFor = None
+
+        #Volatile state on all servers:
+        self.commitIndex = 0
+        self.lastApplied = 0
+
+        #Volatile state on leaders:
+        self.nextIndex = 0
+        self.matchIndex = 0
 
         #msg send and receive
         self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -27,6 +40,16 @@ class Node:
     def send(self, data, addr):
         data = json.dumps(data).encode('utf-8')
         self.clientSocket.sendto(data, addr)
+
+    def request_vote(self):
+        RequestVote = {
+            'term' : self.currentTerm + 1,
+            'candidateId' : self.id,
+            'lastLogIndex' : self.commitIndex,
+            'lastLogTerm' : self.currentTerm
+        }
+        for peer in self.peers:
+            self.send(RequestVote, peer)
 
     def run(self):
         while True:
