@@ -32,6 +32,9 @@ class Node:
         self.nextIndex = 0
         self.matchIndex = 0
 
+        #Persistent state on candidate:
+        self.getted_vote = 0
+
         #msg send and receive
         self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.serverSocket.bind(('localhost', self.port))
@@ -61,27 +64,31 @@ class Node:
         for key in self.peers.keys():
             self.send(RequestVote, self.peers[key])
 
+    def request_vote_response(self, data): #还要加约束，不能谁都true
+        response = {
+                    'type' : 'RequestVote_Response',
+                    'id' : self.id,
+                    'term' : self.currentTerm,
+                    'voteGranted' : True
+                }
+        self.send(response, self.peers[data['id']])
+
     def follower_handle(self, data):
         if data == None:
             currentTime = time.time()
             logging.info('current:{}, next:{}'.format(currentTime, self.next_leader_election_time))
             #超时开始选举
             if currentTime >= self.next_leader_election_time:
+                # self.getted_vote = 0
                 self.role = 'candidate'
                 self.request_vote()
                 logging.info('{} change to candidate, request_vote'.format(self.id))
         else:
             if data['type'] == 'RequestVote':
-                response = {
-                    'type' : 'RequestVote',
-                    'id' : self.id,
-                    'term' : self.currentTerm,
-                    'voteGranted' : True
-                }
-                self.send(response, self.peers[data['id']])
+                self.request_vote_response(data)
                 self.role = 'follower'
                 # self.next_leader_election_time = time.time() + self.heartBeat + random.randint(*self.wait_ms) / 1000
-                logging.info('###sending {}'.format(response))
+                # logging.info('###sending {}'.format(response))
             elif data['type'] == 'AppendEntries':
                 self.role = 'follower'
                 self.next_leader_election_time = time.time() + self.heartBeat + random.randint(*self.wait_ms) / 1000
@@ -101,12 +108,18 @@ class Node:
         logging.info('{} is candidate now!!'.format(self.id))
 
         if data != None:
-            if data['type'] == 'RequestVote' and data['voteGranted'] == True:
-                self.role = 'leader'
+            if data['type'] == 'RequestVote_Response' and data['voteGranted'] == True:
+                self.getted_vote += 1
+                if self.getted_vote > (len(self.peers) / 2):
+                    self.getted_vote = 0
+                    self.role = 'leader'
+            elif data['type'] == 'RequestVote':
+                self.request_vote_response(data)
             elif data['type'] == 'AppendEntries':
+                self.getted_vote = 0
                 self.role = 'follower'
         else:
-            pass
+            self.request_vote()
 
     def run(self):
         while True:

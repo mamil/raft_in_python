@@ -6,7 +6,9 @@ if __name__ == '__main__':
             'port' : 10001,
             'peers' :{
                     'node2' : ('localhost', 10002),
-                    'node3' : ('localhost', 10003)
+                    'node3' : ('localhost', 10003),
+                    'node4' : ('localhost', 10004),
+                    'node5' : ('localhost', 10005)
                 }
             }
     node = Node(conf)
