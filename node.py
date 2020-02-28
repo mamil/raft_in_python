@@ -2,6 +2,7 @@ import socket
 import json
 import logging
 import time
+import random
 
 logging.basicConfig(level=logging.INFO)
 
@@ -13,6 +14,11 @@ class Node:
 
         self.bufferSize = 10240
         self.role = 'follower'
+
+        #timer
+        self.heartBeat = 2
+        self.wait_ms = (150,300)
+        self.next_leader_election_time = time.time() + self.heartBeat + random.randint(*self.wait_ms) / 1000
 
         #Persistent state on all servers:
         self.currentTerm = 0
@@ -29,7 +35,7 @@ class Node:
         #msg send and receive
         self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.serverSocket.bind(('localhost', self.port))
-        self.serverSocket.settimeout(2)
+        self.serverSocket.settimeout(self.heartBeat - 1)
 
         self.clientSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -42,27 +48,82 @@ class Node:
         self.clientSocket.sendto(data, addr)
 
     def request_vote(self):
+        # logging.info("!!!in request_vote!!!")
+
         RequestVote = {
+            'type' : 'RequestVote',
+            'id' : self.id,
             'term' : self.currentTerm + 1,
             'candidateId' : self.id,
             'lastLogIndex' : self.commitIndex,
             'lastLogTerm' : self.currentTerm
         }
-        for peer in self.peers:
-            self.send(RequestVote, peer)
+        for key in self.peers.keys():
+            self.send(RequestVote, self.peers[key])
+
+    def follower_handle(self, data):
+        if data == None:
+            currentTime = time.time()
+            logging.info('current:{}, next:{}'.format(currentTime, self.next_leader_election_time))
+            #超时开始选举
+            if currentTime >= self.next_leader_election_time:
+                self.role = 'candidate'
+                self.request_vote()
+                logging.info('{} change to candidate, request_vote'.format(self.id))
+        else:
+            if data['type'] == 'RequestVote':
+                response = {
+                    'type' : 'RequestVote',
+                    'id' : self.id,
+                    'term' : self.currentTerm,
+                    'voteGranted' : True
+                }
+                self.send(response, self.peers[data['id']])
+                self.role = 'follower'
+                # self.next_leader_election_time = time.time() + self.heartBeat + random.randint(*self.wait_ms) / 1000
+                logging.info('###sending {}'.format(response))
+            elif data['type'] == 'AppendEntries':
+                self.role = 'follower'
+                self.next_leader_election_time = time.time() + self.heartBeat + random.randint(*self.wait_ms) / 1000
+
+    def leader_handle(self, data):
+        logging.info('{} is leader now!!'.format(self.id))
+
+        msg = {
+            'type' : 'AppendEntries',
+            'id' : self.id,
+            'info' : ''
+        }
+        for key in self.peers.keys():
+            self.send(msg, self.peers[key])
+
+    def candidate_handle(self, data):
+        logging.info('{} is candidate now!!'.format(self.id))
+
+        if data != None:
+            if data['type'] == 'RequestVote' and data['voteGranted'] == True:
+                self.role = 'leader'
+            elif data['type'] == 'AppendEntries':
+                self.role = 'follower'
+        else:
+            pass
 
     def run(self):
         while True:
             try:
                 data, addr = self.receive()
             except Exception as e:
-                data, addr = None, None
+                data, addr = None, None #可以不用Timer,因为这里socket超时就相当于一个计时器,但是这样有个问题，超时之后的随机时间就无效了。
                 logging.info(e)
                 
-            logging.info("receive: {}, {}".format(data, addr))
+            logging.info("role:{}, receive: {}, {}".format(self.role, data, addr))
 
-            self.send("from {}".format(self.id), self.peers[0]) #这里也需要考虑超时吗？？双端都是send会卡住？
-            self.send("from {}".format(self.id), self.peers[1])
+            if self.role == 'follower':
+                self.follower_handle(data)
+            elif self.role == 'leader':
+                self.leader_handle(data)
+            elif self.role == 'candidate':
+                self.candidate_handle(data)
 
             time.sleep(1)
 
