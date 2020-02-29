@@ -16,13 +16,14 @@ class Node:
         self.role = 'follower'
 
         #timer
-        self.heartBeat = 2
+        self.heartBeat = 3
         self.wait_ms = (150,300)
         self.next_leader_election_time = time.time() + self.heartBeat + random.randint(*self.wait_ms) / 1000
 
         #Persistent state on all servers:
         self.currentTerm = 0
         self.votedFor = None
+        self.votedForTerm = 0
 
         #Volatile state on all servers:
         self.commitIndex = 0
@@ -53,10 +54,11 @@ class Node:
     def request_vote(self):
         # logging.info("!!!in request_vote!!!")
 
+        self.votedFor = self.id #投票给自己
         RequestVote = {
             'type' : 'RequestVote',
             'id' : self.id,
-            'term' : self.currentTerm + 1,
+            'term' : self.currentTerm,
             'candidateId' : self.id,
             'lastLogIndex' : self.commitIndex,
             'lastLogTerm' : self.currentTerm
@@ -66,11 +68,38 @@ class Node:
 
     def request_vote_response(self, data): #还要加约束，不能谁都true
         response = {
-                    'type' : 'RequestVote_Response',
-                    'id' : self.id,
-                    'term' : self.currentTerm,
-                    'voteGranted' : True
-                }
+                        'type' : 'RequestVote_Response',
+                        'id' : self.id,
+                        'term' : self.currentTerm,
+                        'voteGranted' : False
+                    }
+
+        if data['term'] < self.currentTerm:
+            response = {
+                        'type' : 'RequestVote_Response',
+                        'id' : self.id,
+                        'term' : self.currentTerm,
+                        'voteGranted' : False
+                    }
+        elif (self.votedFor == None or self.votedFor == data['id']) and data['lastLogIndex'] >= self.commitIndex:
+            self.votedFor = data['id'] #什么时候清空呢？第一轮平票，第二轮的时候，如果不改，还是投给之前那个，那还是平票。
+            self.votedForTerm = data['term'] #增加记录
+            response = {
+                        'type' : 'RequestVote_Response',
+                        'id' : self.id,
+                        'term' : self.currentTerm,
+                        'voteGranted' : True
+                    }
+        elif self.votedFor != None and data['term'] > self.votedForTerm: # 上次平票，如果这次有term更新的来了，那么投票
+            self.votedFor = data['id'] #什么时候清空呢？第一轮平票，第二轮的时候，如果不改，还是投给之前那个，那还是平票。
+            self.votedForTerm = data['term'] #增加记录
+            response = {
+                        'type' : 'RequestVote_Response',
+                        'id' : self.id,
+                        'term' : self.currentTerm,
+                        'voteGranted' : True
+                    }
+
         self.send(response, self.peers[data['id']])
 
     def follower_handle(self, data):
@@ -81,6 +110,7 @@ class Node:
             if currentTime >= self.next_leader_election_time:
                 # self.getted_vote = 0
                 self.role = 'candidate'
+                self.currentTerm += 1
                 self.request_vote()
                 logging.info('{} change to candidate, request_vote'.format(self.id))
         else:
@@ -110,7 +140,7 @@ class Node:
         if data != None:
             if data['type'] == 'RequestVote_Response' and data['voteGranted'] == True:
                 self.getted_vote += 1
-                if self.getted_vote > (len(self.peers) / 2):
+                if (self.getted_vote + 1) > (len(self.peers) / 2): # +1 是加自己对自己的一票
                     self.getted_vote = 0
                     self.role = 'leader'
             elif data['type'] == 'RequestVote':
@@ -119,6 +149,7 @@ class Node:
                 self.getted_vote = 0
                 self.role = 'follower'
         else:
+            self.currentTerm += 1 #一次选举超时，开始下一次
             self.request_vote()
 
     def run(self):
@@ -137,7 +168,3 @@ class Node:
                 self.leader_handle(data)
             elif self.role == 'candidate':
                 self.candidate_handle(data)
-
-            time.sleep(1)
-
-

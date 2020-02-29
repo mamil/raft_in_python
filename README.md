@@ -1,5 +1,30 @@
 # raft_in_python
 
+## step by step
+
+## Adding constraints to voting
+
+1. 将心跳调整为3s，那么socket超时变为2s，选举超时也变为2s，直觉上会更随机一点-_-
+
+2. [TODO] 增加了新的变量votedForTerm，很糟糕。
+
+    因为在第一轮选举平票的时候，candidate会触发第2轮选举，但是这个时候，follower怎么知道是第二轮呢？
+
+    不知道的话，就不能按照先来先得的原则投票了，像论文说的，会投给原先的那个candidateId，如果所有follower都这样，那不是又平票了？
+
+        If votedFor is null or candidateId, and candidate’s log is at
+        least as up-to-date as receiver’s log, grant vote
+
+    所以先加了votedForTerm这个变量，来记录上次投的term，如果有更新的来，就投给更新的。
+
+    但是这样又有问题了，一轮中会不会产生多次投票？或者说，RAFT中的一轮投票是怎么定义的呢？
+
+    比如candidate1 发起term5的投票，follower1投一票，然后candidate2 发起term6的投票，follower1应该投吗？
+
+    投的话是不是投了2票？不投的话如果是下一轮candidate2先到呢？感觉思路不对，还要多读读论文。
+
+3. 删除了之前的sleep(),上次忘记了。
+
 ## commit 6968322ac59223a2c50b3b279d83b84ca3a094a7
 
 1. 增加了已经获得的投票数，用于判断是否达到大多数。
