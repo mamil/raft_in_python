@@ -140,7 +140,9 @@ class Node:
         if data != None:
             if data['type'] == 'RequestVote_Response' and data['voteGranted'] == True:
                 self.getted_vote += 1
-                if (self.getted_vote + 1) > (len(self.peers) / 2): # +1 是加自己对自己的一票
+                logging.info('current vote:{}, need:{}'.format(self.getted_vote, int((len(self.peers) / 2))))
+
+                if (self.getted_vote + 1) > int((len(self.peers) / 2)): # +1 是加自己对自己的一票
                     self.getted_vote = 0
                     self.role = 'leader'
             elif data['type'] == 'RequestVote':
@@ -150,6 +152,7 @@ class Node:
                 self.role = 'follower'
         else:
             self.currentTerm += 1 #一次选举超时，开始下一次
+            self.getted_vote = 0
             self.request_vote()
 
     def run(self):

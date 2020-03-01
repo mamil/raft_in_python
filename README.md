@@ -2,6 +2,12 @@
 
 ## step by step
 
+## fix getted_vote count error and add log
+
+1. getted_vote需要在选举超期时归零
+
+2. 增加log，记录vote信息
+
 ## Adding constraints to voting
 
 1. 将心跳调整为3s，那么socket超时变为2s，选举超时也变为2s，直觉上会更随机一点-_-
